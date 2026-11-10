@@ -29,6 +29,31 @@ It uses separate threads for decoding frames from the stream and for processing 
 
 ### Installation (Linux / WSL)
 
+On Omarchy/Arch the recommended path uses `uv` and keeps the interpreter,
+cache and virtualenv inside the checkout (useful when `/` is small and the
+project lives on a data disk):
+
+```bash
+./tools/bootstrap_linux.sh --models
+source .venv/bin/activate
+python tools/doctor.py
+```
+
+Manual `uv` equivalent:
+
+```bash
+export UV_CACHE_DIR="$PWD/.uv-cache"
+export UV_PYTHON_INSTALL_DIR="$PWD/.uv-python"
+uv python install 3.11
+uv venv --python 3.11 .venv
+source .venv/bin/activate
+uv pip install torch==2.7.1 torchvision==0.22.1 \
+    --index-url https://download.pytorch.org/whl/cu128
+uv pip install -r requirements.txt
+```
+
+The older conda path also still works:
+
 ```bash
 conda create -n tennis python=3.11 -y
 conda activate tennis
@@ -40,8 +65,9 @@ pip install torch==2.7.1 torchvision==0.22.1 \
 pip install -r requirements.txt
 ```
 
-`requirements.txt` uses `opencv-python-headless`; on a desktop where you want
-the `cv2.imshow` window, install `opencv-python` instead.
+`requirements.txt` uses `opencv-python` (the regular desktop build) so the
+`cv2.imshow` preview window works on Omarchy. Headless servers can swap it for
+`opencv-python-headless`.
 
 The old `requirements.txt` omitted `torchvision`, `PyYAML`, `onnx`, `tensorrt`
 and PyCUDA. PyCUDA is no longer used: `utils/trt_prediction.py` now allocates
@@ -56,7 +82,17 @@ pip install tensorrt==10.8.0.43
 ```
 
 Do not blindly install the newest `tensorrt` meta-package: 10.13+ defaults to
-the CUDA 13 (`tensorrt-cu13`) wheels.
+the CUDA 13 (`tensorrt-cu13`) wheels. On recent Arch/Omarchy kernels, if
+`tools/setup_models.py` fails with `libnvinfer_builder_resource.so... cannot
+enable executable stack`, clear the flag once:
+
+```bash
+uv pip install patchelf
+.venv/bin/patchelf --clear-execstack \
+  "$(.venv/bin/python -c 'import pathlib,tensorrt_libs; print(pathlib.Path(tensorrt_libs.__file__).parent)')/libnvinfer_builder_resource.so.10.8.0"
+```
+
+`tools/bootstrap_linux.sh` performs this automatically.
 
 ### Model Preparation (automatic)
 

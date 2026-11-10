@@ -121,6 +121,33 @@ def main() -> int:
             report["modules"][name] = version
             print(f"  {name:12s} {version}")
 
+    print("\n-- OpenCV / display " + "-" * 53)
+    cv2_version = report["modules"].get("cv2")
+    if cv2_version:
+        try:
+            import cv2
+
+            build = cv2.getBuildInformation()
+            gui_line = next(
+                (line.strip() for line in build.splitlines() if line.strip().startswith("GUI:")),
+                "GUI: unknown",
+            )
+            display = os.environ.get("DISPLAY")
+            wayland = os.environ.get("WAYLAND_DISPLAY")
+            report["opencv"] = {
+                "version": cv2_version,
+                "gui": gui_line,
+                "display": display,
+                "wayland_display": wayland,
+            }
+            print(f"  cv2 {cv2_version} ({gui_line})")
+            print(f"  DISPLAY={display or '(unset)'} WAYLAND_DISPLAY={wayland or '(unset)'}")
+            if gui_line.upper().endswith("NONE"):
+                print("  GUI: this is a headless OpenCV build; cv2.imshow is unavailable.")
+                print("       Install `opencv-python` (not headless) for the preview window.")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  OpenCV check failed: {exc}")
+
     print("\n-- GPU " + "-" * 65)
     nvidia_smi = find_nvidia_smi()
     if not nvidia_smi:

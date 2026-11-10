@@ -95,11 +95,24 @@ export PATH="$HOME/.local/bin:$PATH"
 
 `git` is used to clone the RT-DETR configs.
 
+**Disk usage:** if the project lives on a large data disk (for example
+`/mnt/hdd/...`) while `/` is small, keep everything local to the checkout.
+`tools/bootstrap_linux.sh` does this automatically; for manual commands run:
+
+```bash
+export UV_CACHE_DIR="$PWD/.uv-cache"
+export UV_PYTHON_INSTALL_DIR="$PWD/.uv-python"
+```
+
+This places the virtualenv, uv's download cache and the managed Python 3.11
+interpreter in the repository instead of `~/.cache` / `~/.local`.
+
 ### 1.3 Wayland / GUI note
 
-Omarchy uses Hyprland (Wayland). `cv2.imshow` is not reliable there. Use
-`--no-display` and inspect the annotated MP4. The project is fully usable
-headless.
+Omarchy uses Hyprland (Wayland). The environment installs regular
+`opencv-python`, so `cv2.imshow` works through Omarchy's XWayland session
+(`DISPLAY` is normally `:0`). If XWayland is unavailable, run with
+`--no-display` and inspect the annotated MP4 instead.
 
 ---
 
@@ -118,9 +131,12 @@ What the script does:
 1. Verifies `nvidia-smi` and `git` (does not install system drivers).
 2. Uses `uv` to create `.venv` with Python 3.11.
 3. Installs `torch==2.7.1` / `torchvision==0.22.1` CUDA 12.8 wheels.
-4. Installs `requirements.txt` (headless OpenCV, ONNX, scipy, etc.).
-5. Installs `tensorrt==10.8.0.43`, with a `pip` fallback if the TensorRT
-   wheel-stub build fails.
+4. Installs `requirements.txt` (regular `opencv-python` with GUI support,
+   ONNX, scipy, etc.).
+5. Installs `tensorrt==10.8.0.43` (explicit CUDA-12 bindings/libs if the
+   meta-package only installs stubs) and clears the executable-stack flag on
+   its builder library, which newer Omarchy kernels reject during engine
+   builds.
 6. With `--models`, runs `python tools/setup_models.py --all`.
 7. Runs `tools/doctor.py`.
 
@@ -150,9 +166,17 @@ uv pip install -r /tmp/req-no-trt.txt
 
 # TensorRT 10.8 is the CUDA-12 line. 10.13+ defaults to CUDA-13 wheels.
 uv pip install tensorrt==10.8.0.43
-# If the PEP-517 stub build fails:
-#   uv pip install pip
-#   python -m pip install --no-cache-dir tensorrt==10.8.0.43
+
+# Some installs only get the meta-package stubs. Verify the import, then add
+# the concrete CUDA-12 bindings/libs if `tensorrt_bindings` is missing:
+python -c "import tensorrt" || uv pip install \
+    tensorrt-cu12-bindings==10.8.0.43 tensorrt-cu12-libs==10.8.0.43
+
+# Newer kernels/glibc reject the executable-stack flag on TensorRT 10.8's
+# builder-resource library. Clearing it is safe (it is build-only):
+uv pip install patchelf
+TRT_LIBS="$(python -c 'import pathlib, tensorrt_libs; print(pathlib.Path(tensorrt_libs.__file__).parent)')"
+.venv/bin/patchelf --clear-execstack "$TRT_LIBS/libnvinfer_builder_resource.so.10.8.0"
 
 # Download weights + export ONNX + build local TensorRT engines
 python tools/setup_models.py --all
@@ -288,7 +312,8 @@ Rules:
 - Do NOT use PyCUDA; utils/trt_prediction.py uses PyTorch CUDA streams/memory.
 - TensorRT .trt files are not portable between machines; rebuild them with
   `python tools/setup_models.py --all --overwrite` if doctor.py reports INVALID.
-- Use --no-display on Wayland/headless.
+- The environment uses regular `opencv-python`; `cv2.imshow` works through
+  XWayland (`DISPLAY=:0`). Use `--no-display` on true headless machines.
 
 Start by running:
     source .venv/bin/activate
@@ -320,10 +345,12 @@ READY
 | `nvidia-smi: command not found` | Install/repair the NVIDIA driver (`nvidia` or `nvidia-open`, `nvidia-utils`), reboot |
 | `torch.cuda.is_available()` is `False` | Wrong PyTorch wheel or driver not loaded. Reinstall the cu128 wheel, reboot, check `nvidia-smi` |
 | `import tensorrt` fails with `libcudart.so.12` | Reinstall `tensorrt==10.8.0.43`; ensure `nvidia-cuda-runtime-cu12` is installed. Last resort: add the venv’s `nvidia/*/lib` dirs to `LD_LIBRARY_PATH` |
+| `import tensorrt` fails with `No module named 'tensorrt_bindings'` | `uv pip install tensorrt-cu12-bindings==10.8.0.43 tensorrt-cu12-libs==10.8.0.43` |
+| Engine build fails with `libnvinfer_builder_resource.so... cannot enable executable stack` | `uv pip install patchelf && .venv/bin/patchelf --clear-execstack .venv/lib/python3.11/site-packages/tensorrt_libs/libnvinfer_builder_resource.so.10.8.0` |
 | Engine deserialization fails / `Platform specific tag mismatch` | Expected after copying a `.trt` from another machine. Rebuild with `python tools/setup_models.py --all --overwrite` |
 | `No module named faster_coco_eval` | `uv pip install faster-coco-eval` (needed by RT-DETR `src/data`) |
 | `uv pip install tensorrt` build fails | Use `python -m pip install --no-cache-dir tensorrt==10.8.0.43` inside the venv |
-| `cv2.imshow` fails on Omarchy/Wayland | Use `--no-display`; inspect the MP4. For GUI, install `opencv-python` and run under XWayland |
+| `cv2.imshow` fails on Omarchy/Wayland | Use `--no-display`; inspect the MP4. For GUI, ensure `opencv-python` (not headless) is installed and run under XWayland (`DISPLAY=:0`) |
 | Court keypoints look wrong | Check the overlay; use an elevated/broadcast camera. Re-run `verify_models.py` on a single frame. The keypoint model is not trained for ground-level cameras |
 | Output video is black/empty | Ensure the source opens with `cv2.VideoCapture`; check `ffmpeg` support. The output is always sized from the first frame |
 | Slow FPS | RT-DETR r50 is the heaviest option. Build r18/r34 for speed: `python tools/setup_models.py --all --rtdetr-model r18 --overwrite` |

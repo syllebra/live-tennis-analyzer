@@ -19,6 +19,15 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Keep every large artifact inside the project checkout (which may live on a
+# big data disk) instead of the small root filesystem:
+#   .venv/        virtual environment
+#   .uv-cache/    uv's download/build cache
+#   .uv-python/   uv-managed CPython 3.11
+export UV_CACHE_DIR="${UV_CACHE_DIR:-$PROJECT_ROOT/.uv-cache}"
+export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$PROJECT_ROOT/.uv-python}"
+mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR"
+
 INSTALL_MODELS=0
 INSTALL_UV=0
 for arg in "$@"; do
@@ -134,6 +143,23 @@ grep -v -E '^[[:space:]]*tensorrt' requirements.txt > .requirements-no-trt.txt
 uv pip install -r .requirements-no-trt.txt
 rm -f .requirements-no-trt.txt
 
+# opencv-python's bundled Qt no longer ships fonts, which makes cv2.imshow
+# print QFontDatabase warnings. Link one system font into its expected dir.
+CV2_QT_FONTS="$(python - <<'PY'
+import pathlib
+import cv2
+print(pathlib.Path(cv2.__file__).resolve().parent / "qt" / "fonts")
+PY
+)"
+mkdir -p "$CV2_QT_FONTS"
+SYSTEM_FONT="$(fc-match -f '%{file}\n' sans 2>/dev/null | head -n 1 || true)"
+if [[ -n "$SYSTEM_FONT" && -f "$SYSTEM_FONT" ]]; then
+    FONT_NAME="$(basename "$SYSTEM_FONT")"
+    if [[ ! -e "$CV2_QT_FONTS/$FONT_NAME" ]]; then
+        ln -s "$SYSTEM_FONT" "$CV2_QT_FONTS/$FONT_NAME"
+    fi
+fi
+
 if ! python -c "import tensorrt" >/dev/null 2>&1; then
     echo "Installing TensorRT 10.8.0.43 (CUDA 12) ..."
     if ! uv pip install tensorrt==10.8.0.43; then
@@ -141,6 +167,33 @@ if ! python -c "import tensorrt" >/dev/null 2>&1; then
         uv pip install pip
         python -m pip install --no-cache-dir tensorrt==10.8.0.43
     fi
+fi
+
+# Some TensorRT releases install the meta-package but not the actual CUDA 12
+# bindings (the `import tensorrt` then fails with `tensorrt_bindings`).
+# Install the concrete packages explicitly if that happened.
+if ! python -c "import tensorrt" >/dev/null 2>&1; then
+    echo "TensorRT bindings missing; installing tensorrt-cu12 bindings/libs ..."
+    uv pip install \
+        tensorrt-cu12-bindings==10.8.0.43 \
+        tensorrt-cu12-libs==10.8.0.43
+fi
+
+python -c "import tensorrt; print('TensorRT', tensorrt.__version__)"
+
+# TensorRT 10.8 ships a build-only library with an executable-stack flag that
+# newer kernels/glibc refuse to load. Clear the flag in place (safe for this
+# library) so tools/setup_models.py can build engines.
+TRT_LIBS="$(python - <<'PY'
+import pathlib
+import tensorrt_libs
+print(pathlib.Path(tensorrt_libs.__file__).resolve().parent)
+PY
+)"
+if [[ -f "$TRT_LIBS/libnvinfer_builder_resource.so.10.8.0" ]]; then
+    echo "Clearing executable-stack flag on TensorRT builder library ..."
+    uv pip install patchelf >/dev/null
+    .venv/bin/patchelf --clear-execstack "$TRT_LIBS/libnvinfer_builder_resource.so.10.8.0"
 fi
 
 echo

@@ -13,11 +13,17 @@ Real-time tennis video analyzer:
 
 ## Environment
 
-- Use the project virtualenv: `source .venv/bin/activate` (full Linux) or the
-  `tennis` conda env (WSL). Do not use system Python.
+- Use the project virtualenv: `source .venv/bin/activate` (full Linux/Omarchy)
+  or the `tennis` conda env (old WSL setup). Do not use system Python.
+- The Omarchy `.venv` is built with `uv` (Python 3.11). To keep large files off
+  the small root filesystem, `uv`'s cache and managed Python also live in the
+  repo: `export UV_CACHE_DIR="$PWD/.uv-cache"` and
+  `export UV_PYTHON_INSTALL_DIR="$PWD/.uv-python"` before running `uv`.
+  `tools/bootstrap_linux.sh` sets these automatically.
 - Verified stack: Python 3.11, `torch==2.7.1+cu128`,
   `torchvision==0.22.1+cu128`, `tensorrt==10.8.0.43`, ONNX 1.23,
-  headless OpenCV 5.
+  regular `opencv-python` (GUI build; `cv2.imshow` works through XWayland).
+  Headless servers can use `opencv-python-headless` instead.
 - TensorRT 10.13+ installs CUDA-13 wheels; this project is pinned to the
   CUDA-12 line (`tensorrt==10.8.0.43`) to match PyTorch cu128.
 - Do **not** reintroduce PyCUDA. `utils/trt_prediction.py` uses PyTorch CUDA

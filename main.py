@@ -1,8 +1,25 @@
 import argparse
+import os
 import queue
+import sys
 import threading
 import time
 from pathlib import Path
+
+# OpenCV's bundled Qt does not ship a Wayland platform plugin.  On Omarchy
+# (Hyprland/Wayland) there is normally an XWayland display, so force Qt onto
+# the xcb backend before cv2 is imported.  This only affects GUI sessions.
+# omarchy may pre-set QT_QPA_PLATFORM to "wayland;xcb"; replace any value that
+# would try Wayland first.  An explicitly non-Wayland value (e.g. "xcb" or
+# "offscreen") is left untouched.
+_qt_platform = os.environ.get("QT_QPA_PLATFORM", "").lower()
+if (
+    sys.platform.startswith("linux")
+    and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+    and os.environ.get("DISPLAY")
+    and (not _qt_platform or "wayland" in _qt_platform)
+):
+    os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 import cv2
 
