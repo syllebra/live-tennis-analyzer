@@ -1,5 +1,21 @@
-opencv-python
-numpy
+# PyTorch is intentionally listed without a version: install the CUDA build that
+# matches your driver first, for example:
+#   pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu128
 torch
+torchvision
+# Headless build works without libGL/X11. On a desktop where you want
+# cv2.imshow, replace this with `opencv-python`.
+opencv-python-headless
+numpy
 flask
 tqdm
+PyYAML
+onnx
+# RT-DETR's src/data imports this even when only exporting the model.
+faster-coco-eval
+scipy
+tensorboard
+# TensorRT 10.x provides the Python builder/runner API used by this project.
+# Pin a CUDA-12 build that matches the PyTorch wheel used above (CUDA 12.8).
+# The 10.13+ meta-package defaults to CUDA 13 wheels, hence the explicit pin.
+tensorrt==10.8.0.43

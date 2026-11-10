@@ -1,4 +1,6 @@
 import cv2 
+import os
+import queue
 import time
 from collections import deque
 
@@ -9,6 +11,9 @@ class StreamHandler:
         self.stop_flag = stop_flag
         self.fps_feedback = fps_feedback
         self.cap = None
+        # A local file is decoded as fast as the consumer allows, so no frames
+        # are skipped.  Network streams keep the original real-time skipping.
+        self.is_file = os.path.isfile(stream_url)
 
     def start(self):
         self.cap = cv2.VideoCapture(self.stream_url)
@@ -21,18 +26,28 @@ class StreamHandler:
         while not self.stop_flag.is_set():
             ret, frame = self.cap.read()
             if not ret:
-                print("Error: Unable to read frame from stream")
+                # This is a normal end-of-file for local videos and a real
+                # failure for network streams; either way there is nothing
+                # more to decode.
+                print("Stream ended")
                 self.stop_flag.set()
                 break
             
             # check if decoding can be skipped based on fps feedback of processing thread
             frame_delay = self.fps_feedback.get_delay()
-            if time.time() - last_decode_time < frame_delay and self.frame_queue.qsize() > 5:
+            if (
+                not self.is_file
+                and time.time() - last_decode_time < frame_delay
+                and self.frame_queue.qsize() > 5
+            ):
                 # print(f"skipping frame, {frame_delay=}")
                 continue
-                   
 
-            self.frame_queue.put(frame)
+            try:
+                self.frame_queue.put(frame, timeout=1)
+            except queue.Full:
+                # Keep checking stop_flag when the consumer is slower.
+                continue
             last_decode_time = time.time()
 
         self.cap.release()

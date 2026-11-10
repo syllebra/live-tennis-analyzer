@@ -113,11 +113,16 @@ class MiniMap:
         """Draw player positions on the minimap"""
         frame = frame.copy()
         H = self.find_homography(image_kps)
-        H_inv = np.linalg.inv(H)
+        if H is None:
+            return frame
+        try:
+            H_inv = np.linalg.inv(H)
+        except np.linalg.LinAlgError:
+            return frame
         
         # find position of all people on minimap
         minimap_person_positions = []
-        player_boxes, _, _ = filter_detections(detections, 0.6, (0))
+        player_boxes, _, _ = filter_detections(detections, 0.6, [0])
         for box in player_boxes:
             point = (int((box[0] + box[2]) / 2), int(box[3]))
             point = np.array([[point]], dtype=np.float32)  # Shape (1, 1, 2)
@@ -182,15 +187,15 @@ class MiniMap:
         """Draw ball position on the minimap"""
         frame = frame.copy()
         H = self.find_homography(image_kps)
-        
+
         if not hasattr(self, 'ball_tracker'):
             self.ball_tracker = BallTracker()
-        
+
         # Get ball detection
         ball_detected = False
         x, y = np.nan, np.nan
-        ball_boxes, _, _ = filter_detections(detections, 0.4, (32))
-        if len(ball_boxes) > 0:
+        ball_boxes, _, _ = filter_detections(detections, 0.4, [32])
+        if H is not None and len(ball_boxes) > 0:
             ball = ball_boxes[0]
             point = (int((ball[0] + ball[2]) / 2), int((ball[3] + ball[1]) / 2))
             point = np.array([[point]], dtype=np.float32)
@@ -268,11 +273,9 @@ class BallTracker:
         
         # Stop predicting if confidence too low
         if self.confidence < self.confidence_threshold:
-            print("Confidence too low")
             return None, None
-            
+
         if not self.positions or frames_since_detection > self.max_frames_to_interpolate:
-            print("No positions stored yet")
             return None, None
             
         weighted_vel = self.calculate_weighted_velocity()

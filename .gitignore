@@ -1,0 +1,18 @@
+# Downloaded / generated model artifacts
+models/
+
+# Analysis outputs
+output*.mp4
+videos/sample_tennis.mp4
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.requirements-no-trt.txt
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/

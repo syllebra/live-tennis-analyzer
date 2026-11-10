@@ -62,24 +62,25 @@ def postprocess_detections_for_tracker(prediction, classes_to_track, threshold=0
 #     return boxes, scores, labels
 
 def remove_non_players(boxes, scores, labels, keypoints):
+    if len(boxes) <= 2:
+        return boxes, scores, labels
+
+    remaining = list(range(len(boxes)))
     to_keep = []
     for kp in ((24, 25), (26, 27)):
         distances = []
-        for idx, box in enumerate(boxes):
+        for idx in remaining:
+            box = boxes[idx]
             mid_x = (box[0] + box[2]) / 2
             mid_y = (box[1] + box[3]) / 2
             x, y = int(keypoints[kp[0]]), int(keypoints[kp[1]])
-            distance = np.sqrt((mid_x - x) ** 2 + (mid_y - y) ** 2)
-            distances.append(distance)
-        if not to_keep:
-            to_keep.append(np.argmin(distances))
-        else:
-            to_keep.append(np.argmin([dist for i, dist in enumerate(distances) if i not in to_keep]))
-    to_keep = torch.tensor(to_keep)
-    boxes = boxes[to_keep]
-    scores = scores[to_keep]
-    labels = labels[to_keep]
-    return boxes, scores, labels   
+            distances.append(np.sqrt((mid_x - x) ** 2 + (mid_y - y) ** 2))
+        best = remaining[int(np.argmin(distances))]
+        to_keep.append(best)
+        remaining.remove(best)
+
+    to_keep = torch.tensor(to_keep, dtype=torch.long)
+    return boxes[to_keep], scores[to_keep], labels[to_keep]
     
 
 # for pytorch inference
